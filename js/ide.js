@@ -599,6 +599,7 @@ $(document).ready(async function () {
   Programmer's User Input:${input}
   
   `;
+    console.log(prompt);
 
     try {
       const response = await fetch(
@@ -714,11 +715,31 @@ $(document).ready(async function () {
       chatbox.style.flexDirection = "column";
       chatbox.style.height = "100%";
 
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.visibility = "visible";
+      header.style.flexDirection = "row";
+      header.style.height = "40px";
+      header.style.backgroundColor = "#B2AC88";
+      header.style.justifyContent = "center";
+      header.style.alignItems = "center";
+
+      const headerText = document.createElement("span");
+      headerText.innerText = "AI Chat Assistant";
+      headerText.style.fontFamily = "Arial";
+      headerText.style.color = "#fff";
+      headerText.style.fontSize = "20px";
+      header.appendChild(headerText);
+
+      chatbox.appendChild(header);
+
       const messages = document.createElement("div");
       messages.style.flex = "1";
       messages.style.overflowY = "auto";
       messages.style.padding = "10px";
       messages.style.borderBottom = "1px solid #ccc";
+      messages.style.display = "flex";
+      messages.style.flexDirection = "column"; // Ensure messages stack vertically
 
       const inputContainer = document.createElement("div");
       inputContainer.style.display = "flex";
@@ -733,7 +754,7 @@ $(document).ready(async function () {
       sendButton.innerText = "Send";
       sendButton.style.padding = "10px";
       sendButton.style.border = "none";
-      sendButton.style.background = "#007bff";
+      sendButton.style.background = "#B2AC88";
       sendButton.style.color = "#fff";
       sendButton.style.cursor = "pointer";
 
@@ -748,7 +769,7 @@ $(document).ready(async function () {
       apiKeyContainer.style.borderBottom = "1px solid #ccc";
 
       const apiKeyInput = document.createElement("input");
-      apiKeyInput.type = "text";
+      apiKeyInput.type = "password";
       apiKeyInput.placeholder = "Enter API Key";
       apiKeyInput.style.flex = "1";
       apiKeyInput.style.padding = "10px";
@@ -759,7 +780,7 @@ $(document).ready(async function () {
       saveApiKeyButton.innerText = "Save API Key";
       saveApiKeyButton.style.padding = "10px";
       saveApiKeyButton.style.border = "none";
-      saveApiKeyButton.style.background = "#007bff";
+      saveApiKeyButton.style.background = "#B2AC88";
       saveApiKeyButton.style.color = "#fff";
       saveApiKeyButton.style.cursor = "pointer";
 
@@ -772,28 +793,64 @@ $(document).ready(async function () {
       sendButton.addEventListener("click", async function () {
         const message = input.value.trim();
         if (message) {
+          // Create a container for the user message
+          const userMessageContainer = document.createElement("div");
+          userMessageContainer.style.display = "flex";
+          userMessageContainer.style.justifyContent = "flex-end"; // Align user messages to the right
+          userMessageContainer.style.marginBottom = "10px"; // Add spacing between messages
+
           const messageElement = document.createElement("div");
           messageElement.innerText = message;
-          messageElement.style.padding = "5px";
-          messageElement.style.marginBottom = "5px";
-          messageElement.style.background = "#f1f1f1";
+          messageElement.style.padding = "10px";
+          messageElement.style.maxWidth = "70%";
+          messageElement.style.background = "#d1e7dd";
           messageElement.style.borderRadius = "5px";
-          messages.appendChild(messageElement);
+          messageElement.style.textAlign = "right";
+
+          userMessageContainer.appendChild(messageElement);
+          messages.appendChild(userMessageContainer);
           input.value = "";
+
+          const loadingText = document.createElement("div");
+          loadingText.innerText = "Loading...";
+          loadingText.style.padding = "10px";
+          loadingText.style.borderTop = "1px solid #ccc";
+          inputContainer.replaceChild(loadingText, input);
+
           messages.scrollTop = messages.scrollHeight;
 
           const aiResponse = await generateResponse(message);
-          console.log("response recieved:", aiResponse);
+          console.log("response received:", aiResponse);
           if (aiResponse) {
+            let processedResponse = aiResponse
+              .replace(/</g, "&lt;")
+              .replace(/>/g, "&gt;");
+            processedResponse = processedResponse.replace(/\n/g, "<br>");
+            processedResponse = processedResponse.replace(
+              /\*\*(.*?)\*\*/g,
+              "<b>$1</b>"
+            );
+
+            // Create a container for the AI response
+            const aiResponseContainer = document.createElement("div");
+            aiResponseContainer.style.display = "flex";
+            aiResponseContainer.style.justifyContent = "flex-start"; // Align AI responses to the left
+            aiResponseContainer.style.marginBottom = "10px"; // Add spacing between messages
+
             const responseElement = document.createElement("div");
-            responseElement.innerText = aiResponse;
-            responseElement.style.padding = "5px";
-            responseElement.style.marginBottom = "5px";
+            responseElement.innerHTML = processedResponse;
+            responseElement.style.padding = "10px";
+            responseElement.style.maxWidth = "70%";
             responseElement.style.background = "#e1e1e1";
             responseElement.style.borderRadius = "5px";
-            messages.appendChild(responseElement);
+            responseElement.style.textAlign = "left";
+
+            aiResponseContainer.appendChild(responseElement);
+            messages.appendChild(aiResponseContainer);
             messages.scrollTop = messages.scrollHeight;
           }
+
+          inputContainer.replaceChild(input, loadingText);
         }
       });
 
