@@ -1,30 +1,78 @@
-html, body {
-    height: 100%;
-    margin: 0;
-    min-height: 100%;
-    padding: 0;
-    background: url("../images/logo_black.svg") center center / 33% no-repeat #1b1c1d; /* Color from Semantic UI */
-    overflow: hidden;
+html,
+body {
+  height: 100%;
+  margin: 0;
+  min-height: 100%;
+  padding: 0;
+  background: url("../images/logo_black.svg") center center / 33% no-repeat
+    #1b1c1d; /* Color from Semantic UI */
+  overflow: hidden;
+}
+
+.chatbox {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chatbox-header {
+  display: flex;
+  visibility: visible;
+  flex-direction: row;
+  height: 40px;
+  background-color: #b2ac88;
+  justify-content: center;
+  align-items: center;
+}
+
+.chatbox-header-text {
+  font-family: Arial, sans-serif;
+  color: #fff;
+  font-size: 20px;
+}
+
+.debug-assist-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #1e1e1e;
+}
+
+.debug-assist-header {
+  height: 40px;
+  background-color: #252526;
+  color: #ffffff;
+  padding: 10px;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  border-bottom: 1px solid #333;
+}
+
+.diff-container {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
 }
 
 .judge0-file-menu {
-    min-width: 15rem !important;
+  min-width: 15rem !important;
 }
 
 #judge0-status-line {
-    font-family: "JetBrains Mono" !important;
+  font-family: "JetBrains Mono" !important;
 }
 
 #judge0-status-line:empty {
-    display: none;
+  display: none;
 }
 
 .judge0-hidden {
-    display: none !important;
+  display: none !important;
 }
 
 @media (display-mode: standalone) {
-    .judge0-hidden-for-standalone-style {
-      display: none !important;
-    }
+  .judge0-hidden-for-standalone-style {
+    display: none !important;
+  }
 }

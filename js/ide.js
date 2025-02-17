@@ -34,9 +34,14 @@ var fontSize = 13;
 
 var layout;
 
+var diffEditor;
+
 var sourceEditor;
 var stdinEditor;
 var stdoutEditor;
+
+var originalSource = "";
+var modifiedSource = "";
 
 var $selectLanguage;
 var $compilerOptions;
@@ -99,14 +104,29 @@ var layoutConfig = {
           type: "column",
           content: [
             {
-              type: "component",
-              componentName: "assistant",
-              id: "assistant",
-              title: "AI Assistant",
-              isClosable: false,
-              componentState: {
-                readOnly: false,
-              },
+              type: "stack",
+              content: [
+                {
+                  type: "component",
+                  componentName: "assistant",
+                  id: "assistant",
+                  title: "AI Assistant",
+                  isClosable: false,
+                  componentState: {
+                    readOnly: false,
+                  },
+                },
+                {
+                  type: "component",
+                  componentName: "debug_assist",
+                  id: "debug_assist",
+                  title: "Debug Assistant",
+                  isClosable: false,
+                  componentState: {
+                    readOnly: true,
+                  },
+                },
+              ],
             },
           ],
         },
@@ -171,7 +191,86 @@ function handleRunError(jqXHR) {
   );
 }
 
-function handleResult(data) {
+function applyDiffToEditor(diffEditor, sourceEditor, diff) {
+  const lines = diff.split("\n");
+
+  let currentLine = 0;
+  let newContent = sourceEditor.getValue().split("\n");
+
+  for (const line of lines) {
+    if (line.startsWith("@@")) {
+      const chunkHeaderMatch = line.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@/);
+      if (chunkHeaderMatch) {
+        currentLine = parseInt(chunkHeaderMatch[1], 10) - 1;
+      }
+    } else if (line.startsWith("-")) {
+      newContent[currentLine] = "";
+      currentLine++;
+    } else if (line.startsWith("+")) {
+      newContent.splice(currentLine, 0, line.slice(1));
+      currentLine++;
+    } else {
+      currentLine++;
+    }
+  }
+
+  const newContentString = newContent.join("\n");
+
+  const originalModel = monaco.editor.createModel(sourceEditor.getValue());
+  const modifiedModel = monaco.editor.createModel(newContentString);
+
+  diffEditor.setModel({
+    original: originalModel,
+    modified: modifiedModel,
+  });
+}
+
+async function generateDebugDiff(language, source, error) {
+  try {
+    const response = await fetch(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.0-flash-001",
+          messages: [
+            {
+              role: "system",
+              content: `You are an AI debugger who's job is to debug a programmer's code, which is currently not working as intended. 
+          Analyze the code and the error message. Then, apply the most logical solution to debug the error. 
+        
+          Return a minimal unified diff that only includes the necessary changes to fix the issue. Do not include unrelated or unchanged lines in the diff. The diff should be easy to parse and apply programmatically. Use the following template:
+          The template can have more or less removed lines than stated below, depending on your needs.
+             @@ -StartLine,EndLine +StartLine,EndLine @@
+                  - Removed Line
+                  + Added Line
+
+              `,
+            },
+            {
+              role: "user",
+              content: `Language: ${language}\nProgrammer's code:${source}\nError Message:${error}`,
+            },
+          ],
+        }),
+      }
+    );
+
+    const data = await response.json();
+    console.log("AI Response:", data.choices[0].message.content);
+    const debug_fix = data.choices[0].message.content;
+
+    applyDiffToEditor(diffEditor, sourceEditor, debug_fix);
+  } catch (error) {
+    console.error("Error generating response:", error);
+  }
+}
+
+async function handleResult(data) {
   const tat = Math.round(performance.now() - timeStart);
   console.log(`It took ${tat}ms to get submission result.`);
 
@@ -186,6 +285,13 @@ function handleResult(data) {
   const output = [compileOutput, stdout].join("\n").trim();
 
   stdoutEditor.setValue(output);
+
+  if (status.id === 6) {
+    if (!OPENAI_API_KEY) {
+      throw "Please enter your Open Router API key at the top of the AI Assistant chat.";
+    }
+    generateDebugDiff(getSelectedLanguage(), sourceEditor.getValue(), output);
+  }
 
   $runBtn.removeClass("disabled");
 
@@ -599,19 +705,18 @@ $(document).ready(async function () {
   Programmer's User Input:${input}
   
   `;
-    console.log(prompt);
 
     try {
       const response = await fetch(
-        "https://api.openai.com/v1/chat/completions",
+        "https://openrouter.ai/api/v1/chat/completions",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${OPENAI_API_KEY}`, // Replace with your API key
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
           },
           body: JSON.stringify({
-            model: "gpt-4o-mini",
+            model: "google/gemini-2.0-flash-001",
             messages: [{ role: "user", content: prompt }],
           }),
         }
@@ -665,6 +770,22 @@ $(document).ready(async function () {
   require(["vs/editor/editor.main"], function (ignorable) {
     layout = new GoldenLayout(layoutConfig, $("#judge0-site-content"));
 
+    function getActiveSuggestion(editor) {
+      return new Promise((resolve) => {
+        const disposable = editor.onDidSuggest((e) => {
+          if (e.completionModel && e.completionModel.items.length > 0) {
+            const activeItem = e.completionModel.items[0];
+            resolve(activeItem.insertText);
+          } else {
+            resolve(null);
+          }
+          disposable.dispose();
+        });
+
+        editor.trigger("keyboard", "editor.action.triggerSuggest", {});
+      });
+    }
+
     layout.registerComponent("source", function (container, state) {
       sourceEditor = monaco.editor.create(container.getElement()[0], {
         automaticLayout: true,
@@ -681,6 +802,60 @@ $(document).ready(async function () {
         monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
         run
       );
+
+      /*const language = sourceEditor.getModel().getLanguageId();
+      monaco.languages.registerCompletionItemProvider(language, {
+        provideCompletionItems: function (model, position) {
+          const textUntilPosition = model.getValueInRange({
+            startLineNumber: position.lineNumber,
+            startColumn: 1,
+            endLineNumber: position.lineNumber,
+            endColumn: position.column,
+          });
+
+          const suggestions = [
+            {
+              label: "if",
+              kind: monaco.languages.CompletionItemKind.Keyword,
+              insertText: "if (condition)",
+              insertTextRules:
+                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              detail: "If statement",
+            },
+            {
+              label: "for",
+              kind: monaco.languages.CompletionItemKind.Keyword,
+              insertText: "for (int i = 0; i < n; i++)",
+              insertTextRules:
+                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              detail: "For loop",
+            },
+            {
+              label: "while",
+              kind: monaco.languages.CompletionItemKind.Keyword,
+              insertText: "while (condition)",
+              insertTextRules:
+                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+              detail: "While loop",
+            },
+          ];
+
+          const filteredSuggestions = suggestions.filter((suggestion) =>
+            suggestion.label.startsWith(textUntilPosition)
+          );
+
+          return {
+            suggestions: filteredSuggestions,
+          };
+        },
+      });
+
+      sourceEditor.addCommand(monaco.KeyCode.Tab, async function () {
+        const suggestion = await getActiveSuggestion(sourceEditor);
+        if (suggestion) {
+          sourceEditor.trigger("keyboard", "type", { text: suggestion });
+        }
+      });*/
     });
 
     layout.registerComponent("stdin", function (container, state) {
@@ -709,26 +884,115 @@ $(document).ready(async function () {
       });
     });
 
-    layout.registerComponent("assistant", function (container, state) {
-      const chatbox = document.createElement("div");
-      chatbox.style.display = "flex";
-      chatbox.style.flexDirection = "column";
-      chatbox.style.height = "100%";
+    layout.registerComponent("debug_assist", function (container, state) {
+      const debugAssistContainer = document.createElement("div");
+      debugAssistContainer.classList.add("debug-assist-container");
 
       const header = document.createElement("div");
-      header.style.display = "flex";
-      header.style.visibility = "visible";
-      header.style.flexDirection = "row";
-      header.style.height = "40px";
-      header.style.backgroundColor = "#B2AC88";
-      header.style.justifyContent = "center";
-      header.style.alignItems = "center";
+      header.classList.add(
+        "flex",
+        "visible",
+        "flex-row",
+        "h-10",
+        "bg-[#0047AB]",
+        "justify-center",
+        "items-center"
+      );
 
       const headerText = document.createElement("span");
+      headerText.classList.add("font-sans", "text-white", "text-xl");
+      headerText.innerText = "Debug Suggestion Goes Here:";
+      header.appendChild(headerText);
+
+      const diffContainer = document.createElement("div");
+      diffContainer.classList.add("diff-container");
+      diffContainer.style.height = "400px";
+      diffContainer.style.width = "100%";
+
+      const originalModel = monaco.editor.createModel(originalSource);
+      const modifiedModel = monaco.editor.createModel(modifiedSource);
+      diffEditor = monaco.editor.createDiffEditor(diffContainer, {
+        renderSideBySide: false, // Render inline (not side-by-side)
+        readOnly: true, // Make the editor read-only
+        minimap: { enabled: false }, // Disable the minimap
+        automaticLayout: true, // Enable automatic layout
+        ignoreTrimWhitespace: true, // Ignore whitespace changes
+        renderIndicators: false, // Hide indicators for unchanged lines
+      });
+
+      diffEditor.setModel({
+        original: originalModel,
+        modified: modifiedModel,
+      });
+
+      const buttonsContainer = document.createElement("div");
+      buttonsContainer.classList.add("flex", "justify-center", "mt-2");
+
+      // Create Accept Changes button
+      const acceptChangesButton = document.createElement("button");
+      acceptChangesButton.innerText = "Accept Changes";
+      acceptChangesButton.classList.add(
+        "p-2",
+        "bg-green-500",
+        "text-white",
+        "cursor-pointer",
+        "mr-2"
+      );
+      acceptChangesButton.addEventListener("click", function () {
+        const modifiedContent = diffEditor.getModel().modified.getValue();
+        sourceEditor.setValue(modifiedContent);
+        diffEditor.setModel({
+          original: monaco.editor.createModel(""),
+          modified: monaco.editor.createModel(""),
+        });
+      });
+
+      // Create Reject Changes button
+      const rejectChangesButton = document.createElement("button");
+      rejectChangesButton.innerText = "Reject Changes";
+      rejectChangesButton.classList.add(
+        "p-2",
+        "bg-red-500",
+        "text-white",
+        "cursor-pointer"
+      );
+      rejectChangesButton.addEventListener("click", function () {
+        diffEditor.setModel({
+          original: monaco.editor.createModel(""),
+          modified: monaco.editor.createModel(""),
+        });
+      });
+
+      // Append buttons to buttons container
+      buttonsContainer.appendChild(acceptChangesButton);
+      buttonsContainer.appendChild(rejectChangesButton);
+
+      // Append elements to debugAssistContainer
+      debugAssistContainer.append(header);
+      debugAssistContainer.append(diffContainer);
+      debugAssistContainer.append(buttonsContainer);
+
+      container.getElement().append(debugAssistContainer);
+    });
+
+    layout.registerComponent("assistant", function (container, state) {
+      const chatbox = document.createElement("div");
+      chatbox.classList.add("flex", "flex-col", "h-full");
+
+      const header = document.createElement("div");
+      header.classList.add(
+        "flex",
+        "visible",
+        "flex-row",
+        "h-10",
+        "bg-[#0047AB]",
+        "justify-center",
+        "items-center"
+      );
+
+      const headerText = document.createElement("span");
+      headerText.classList.add("font-sans", "text-white", "text-xl");
       headerText.innerText = "AI Chat Assistant";
-      headerText.style.fontFamily = "Arial";
-      headerText.style.color = "#fff";
-      headerText.style.fontSize = "20px";
       header.appendChild(headerText);
 
       chatbox.appendChild(header);
@@ -739,7 +1003,7 @@ $(document).ready(async function () {
       messages.style.padding = "10px";
       messages.style.borderBottom = "1px solid #ccc";
       messages.style.display = "flex";
-      messages.style.flexDirection = "column"; // Ensure messages stack vertically
+      messages.style.flexDirection = "column";
 
       const inputContainer = document.createElement("div");
       inputContainer.style.display = "flex";
@@ -751,12 +1015,9 @@ $(document).ready(async function () {
       input.style.borderTop = "1px solid #ccc";
 
       const sendButton = document.createElement("button");
-      sendButton.innerText = "Send";
-      sendButton.style.padding = "10px";
-      sendButton.style.border = "none";
-      sendButton.style.background = "#B2AC88";
-      sendButton.style.color = "#fff";
-      sendButton.style.cursor = "pointer";
+      sendButton.innerHTML = '<i class="fas fa-paper-plane"></i>';
+      sendButton.className =
+        "p-2.5 border-none bg-[#0047AB] text-white cursor-pointer rounded-md";
 
       inputContainer.appendChild(input);
       inputContainer.appendChild(sendButton);
@@ -780,7 +1041,7 @@ $(document).ready(async function () {
       saveApiKeyButton.innerText = "Save API Key";
       saveApiKeyButton.style.padding = "10px";
       saveApiKeyButton.style.border = "none";
-      saveApiKeyButton.style.background = "#B2AC88";
+      saveApiKeyButton.style.background = "#0047AB";
       saveApiKeyButton.style.color = "#fff";
       saveApiKeyButton.style.cursor = "pointer";
 
@@ -793,11 +1054,10 @@ $(document).ready(async function () {
       sendButton.addEventListener("click", async function () {
         const message = input.value.trim();
         if (message) {
-          // Create a container for the user message
           const userMessageContainer = document.createElement("div");
           userMessageContainer.style.display = "flex";
-          userMessageContainer.style.justifyContent = "flex-end"; // Align user messages to the right
-          userMessageContainer.style.marginBottom = "10px"; // Add spacing between messages
+          userMessageContainer.style.justifyContent = "flex-end";
+          userMessageContainer.style.marginBottom = "10px";
 
           const messageElement = document.createElement("div");
           messageElement.innerText = message;
@@ -812,9 +1072,16 @@ $(document).ready(async function () {
           input.value = "";
 
           const loadingText = document.createElement("div");
-          loadingText.innerText = "Loading...";
-          loadingText.style.padding = "10px";
-          loadingText.style.borderTop = "1px solid #ccc";
+          loadingText.className =
+            "flex items-center p-2 border-t border-gray-300 flex-grow";
+          loadingText.style.height = "100%";
+          const loadingSpinner = document.createElement("i");
+          loadingSpinner.className = "fas fa-spinner fa-spin mr-2";
+          const loadingTextContent = document.createElement("span");
+          loadingTextContent.innerText = "Loading...";
+
+          loadingText.appendChild(loadingSpinner);
+          loadingText.appendChild(loadingTextContent);
           inputContainer.replaceChild(loadingText, input);
 
           messages.scrollTop = messages.scrollHeight;
@@ -831,12 +1098,10 @@ $(document).ready(async function () {
               "<b>$1</b>"
             );
 
-            // Create a container for the AI response
             const aiResponseContainer = document.createElement("div");
             aiResponseContainer.style.display = "flex";
-            aiResponseContainer.style.justifyContent = "flex-start"; // Align AI responses to the left
-            aiResponseContainer.style.marginBottom = "10px"; // Add spacing between messages
-
+            aiResponseContainer.style.justifyContent = "flex-start";
+            aiResponseContainer.style.marginBottom = "10px";
             const responseElement = document.createElement("div");
             responseElement.innerHTML = processedResponse;
             responseElement.style.padding = "10px";
