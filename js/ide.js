@@ -152,7 +152,11 @@ function decode(bytes) {
 
 function showError(title, content) {
   $("#judge0-site-modal #title").html(title);
-  $("#judge0-site-modal .content").html(content);
+  $("#judge0-site-modal .content").html(
+    `<div class="error-container">
+      <span class="error-message">${content}</span>
+    </div>`
+  );
 
   let reportTitle = encodeURIComponent(`Error on ${window.location.href}`);
   let reportBody = encodeURIComponent(
@@ -204,18 +208,16 @@ function applyDiffToEditor(diffEditor, sourceEditor, diff) {
         currentLine = parseInt(chunkHeaderMatch[1], 10) - 1;
       }
     } else if (line.startsWith("-")) {
-      newContent[currentLine] = "";
-      currentLine++;
+      newContent.splice(currentLine, 1);
     } else if (line.startsWith("+")) {
       newContent.splice(currentLine, 0, line.slice(1));
       currentLine++;
-    } else {
+    } else if (line.startsWith(" ")) {
       currentLine++;
     }
   }
 
   const newContentString = newContent.join("\n");
-
   const originalModel = monaco.editor.createModel(sourceEditor.getValue());
   const modifiedModel = monaco.editor.createModel(newContentString);
 
@@ -240,15 +242,17 @@ async function generateDebugDiff(language, source, error) {
           messages: [
             {
               role: "system",
-              content: `You are an AI debugger who's job is to debug a programmer's code, which is currently not working as intended. 
-          Analyze the code and the error message. Then, apply the most logical solution to debug the error. 
-        
-          Return a minimal unified diff that only includes the necessary changes to fix the issue. Do not include unrelated or unchanged lines in the diff. The diff should be easy to parse and apply programmatically. Use the following template:
-          The template can have more or less removed lines than stated below, depending on your needs.
-             @@ -StartLine,EndLine +StartLine,EndLine @@
-                  - Removed Line
-                  + Added Line
+              content: `You are an AI debugger. Your task is to analyze a programmer’s code and an error message, identify the root cause, and apply the most logical fix.
 
+                    Return a minimal unified diff that includes only the necessary changes.
+                    Make sure the fix also removes lines that contain a syntax or logical error.
+                    Do not include unrelated or unchanged lines.
+                    Ensure the diff is easy to parse and apply programmatically.
+                            Format:
+
+                            @@ -StartLine,EndLine +StartLine,EndLine @@  
+                                  - Removed Line  
+                                  + Added Line  
               `,
             },
             {
@@ -281,6 +285,7 @@ async function handleResult(data) {
   const memory = data.memory === null ? "-" : data.memory + "KB";
 
   $statusLine.html(`${status.description}, ${time}, ${memory} (TAT: ${tat}ms)`);
+  $statusLine.addClass("status-line");
 
   const output = [compileOutput, stdout].join("\n").trim();
 
@@ -770,22 +775,6 @@ $(document).ready(async function () {
   require(["vs/editor/editor.main"], function (ignorable) {
     layout = new GoldenLayout(layoutConfig, $("#judge0-site-content"));
 
-    function getActiveSuggestion(editor) {
-      return new Promise((resolve) => {
-        const disposable = editor.onDidSuggest((e) => {
-          if (e.completionModel && e.completionModel.items.length > 0) {
-            const activeItem = e.completionModel.items[0];
-            resolve(activeItem.insertText);
-          } else {
-            resolve(null);
-          }
-          disposable.dispose();
-        });
-
-        editor.trigger("keyboard", "editor.action.triggerSuggest", {});
-      });
-    }
-
     layout.registerComponent("source", function (container, state) {
       sourceEditor = monaco.editor.create(container.getElement()[0], {
         automaticLayout: true,
@@ -803,59 +792,42 @@ $(document).ready(async function () {
         run
       );
 
-      /*const language = sourceEditor.getModel().getLanguageId();
-      monaco.languages.registerCompletionItemProvider(language, {
-        provideCompletionItems: function (model, position) {
-          const textUntilPosition = model.getValueInRange({
-            startLineNumber: position.lineNumber,
-            startColumn: 1,
-            endLineNumber: position.lineNumber,
-            endColumn: position.column,
-          });
+      sourceEditor.addAction({
+        id: "inline-chat-editor",
+        label: "Inline Chat Editor",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 1,
+        run: function (editor) {
+          console.log("Running Inline chat editor");
+          const position = editor.getPosition();
+          console.log("Position:", position.lineNumber, position.column);
 
-          const suggestions = [
-            {
-              label: "if",
-              kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: "if (condition)",
-              insertTextRules:
-                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              detail: "If statement",
-            },
-            {
-              label: "for",
-              kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: "for (int i = 0; i < n; i++)",
-              insertTextRules:
-                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              detail: "For loop",
-            },
-            {
-              label: "while",
-              kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: "while (condition)",
-              insertTextRules:
-                monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              detail: "While loop",
-            },
-          ];
+          const offset = editor.getOffsetForPosition(position);
+          const mousePosition = editor.getScrolledVisiblePosition(position);
 
-          const filteredSuggestions = suggestions.filter((suggestion) =>
-            suggestion.label.startsWith(textUntilPosition)
-          );
+          console.log("Mouse Position:", mousePosition);
 
-          return {
-            suggestions: filteredSuggestions,
-          };
+          const chatbox = document.createElement("div");
+          chatbox.className = "inline-chatbox";
+          chatbox.innerHTML = `
+                <div class="suggested-code">// Suggested code goes here</div>
+                <div class="button-container">
+                    <button class="accept-button"></button>
+                    <button class="reject-button"></button>
+                </div>
+            `;
+
+          chatbox.style.position = "absolute";
+          chatbox.style.left = `${mousePosition.left}px`;
+          chatbox.style.top = `${mousePosition.top}px`;
+          console.log("chatbox pos:", chatbox.style.left, chatbox.style.top);
+
+          const editorContainer = editor.getDomNode();
+          if (editorContainer) {
+            editorContainer.appendChild(chatbox);
+          }
         },
       });
-
-      sourceEditor.addCommand(monaco.KeyCode.Tab, async function () {
-        const suggestion = await getActiveSuggestion(sourceEditor);
-        if (suggestion) {
-          sourceEditor.trigger("keyboard", "type", { text: suggestion });
-        }
-      });*/
     });
 
     layout.registerComponent("stdin", function (container, state) {
@@ -912,12 +884,12 @@ $(document).ready(async function () {
       const originalModel = monaco.editor.createModel(originalSource);
       const modifiedModel = monaco.editor.createModel(modifiedSource);
       diffEditor = monaco.editor.createDiffEditor(diffContainer, {
-        renderSideBySide: false, // Render inline (not side-by-side)
-        readOnly: true, // Make the editor read-only
-        minimap: { enabled: false }, // Disable the minimap
-        automaticLayout: true, // Enable automatic layout
-        ignoreTrimWhitespace: true, // Ignore whitespace changes
-        renderIndicators: false, // Hide indicators for unchanged lines
+        renderSideBySide: false,
+        readOnly: true,
+        minimap: { enabled: false },
+        automaticLayout: true,
+        ignoreTrimWhitespace: true,
+        renderIndicators: false,
       });
 
       diffEditor.setModel({
@@ -928,7 +900,6 @@ $(document).ready(async function () {
       const buttonsContainer = document.createElement("div");
       buttonsContainer.classList.add("flex", "justify-center", "mt-2");
 
-      // Create Accept Changes button
       const acceptChangesButton = document.createElement("button");
       acceptChangesButton.innerText = "Accept Changes";
       acceptChangesButton.classList.add(
@@ -947,7 +918,6 @@ $(document).ready(async function () {
         });
       });
 
-      // Create Reject Changes button
       const rejectChangesButton = document.createElement("button");
       rejectChangesButton.innerText = "Reject Changes";
       rejectChangesButton.classList.add(
@@ -963,11 +933,9 @@ $(document).ready(async function () {
         });
       });
 
-      // Append buttons to buttons container
       buttonsContainer.appendChild(acceptChangesButton);
       buttonsContainer.appendChild(rejectChangesButton);
 
-      // Append elements to debugAssistContainer
       debugAssistContainer.append(header);
       debugAssistContainer.append(diffContainer);
       debugAssistContainer.append(buttonsContainer);

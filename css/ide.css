@@ -55,6 +55,20 @@ body {
   overflow: hidden;
 }
 
+.error-message {
+  display: none;
+  font-size: 12px;
+  padding: 5px;
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+.error-container:hover .error-message {
+  display: block;
+}
+
 .judge0-file-menu {
   min-width: 15rem !important;
 }
@@ -67,8 +81,86 @@ body {
   display: none;
 }
 
+.inline-chatbox {
+  position: relative;
+  display: inline-block;
+  background-color: #1e1e1e;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-family: Arial, sans-serif;
+  max-width: 300px;
+}
+
+.inline-suggestion {
+  background-color: #f1f1f1;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 10px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.inline-button-container {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.accept-button,
+.reject-button {
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.accept-button {
+  background-color: #4caf50;
+  color: white;
+}
+
+.accept-button:hover {
+  background-color: #45a049;
+}
+
+.reject-button {
+  background-color: #f44336;
+  color: white;
+}
+
+.reject-button:hover {
+  background-color: #e53935;
+}
+
+.accept-button::after {
+  content: "✓";
+}
+
+.reject-button::after {
+  content: "✕";
+}
+
 .judge0-hidden {
   display: none !important;
+}
+
+.status-line {
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.status-line:hover {
+  opacity: 1;
 }
 
 @media (display-mode: standalone) {
