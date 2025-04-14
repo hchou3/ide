@@ -1,65 +1,19 @@
-"use strict";
+1. **Exact Changes Needed in `js/puter.js`:**
 
-export const IS_PUTER = puter.env === "app";
+Replace the existing code pattern for setting up the form listener with the `setupFormListener` function. Assuming the original code on lines 64-66 is setting up a form listener, it should be replaced with:
 
-export function usePuter() {
-    return IS_PUTER || puter.auth.isSignedIn();
-}
-
-async function uiSignIn() {
-    document.getElementById("judge0-sign-in-btn").classList.add("judge0-hidden");
-    const signOutBtn = document.getElementById("judge0-sign-out-btn");
-    signOutBtn.classList.remove("judge0-hidden");
-    signOutBtn.querySelector("#judge0-puter-username").innerText = (await puter.auth.getUser()).username;
-
-    const modelSelect = document.getElementById("judge0-chat-model-select");
-    modelSelect.closest(".ui.selection.dropdown").classList.remove("disabled");
-
-    const userInput = document.getElementById("judge0-chat-user-input");
-    userInput.disabled = false;
-    userInput.placeholder = `Message ${modelSelect.value}`;
-
-    document.getElementById("judge0-chat-send-button").disabled = false;
-    document.getElementById("judge0-inline-suggestions").disabled = false;
-}
-
-function uiSignOut() {
-    document.getElementById("judge0-sign-in-btn").classList.remove("judge0-hidden");
-    const signOutBtn = document.getElementById("judge0-sign-out-btn");
-    signOutBtn.classList.add("judge0-hidden");
-    signOutBtn.querySelector("#judge0-puter-username").innerText = "Sign out";
-
-    const modelSelect = document.getElementById("judge0-chat-model-select");
-    modelSelect.closest(".ui.selection.dropdown").classList.add("disabled");
-
-    const userInput = document.getElementById("judge0-chat-user-input");
-    userInput.disabled = true;
-    userInput.placeholder = `Sign in to chat with ${modelSelect.value}`;
-
-    document.getElementById("judge0-chat-send-button").disabled = true;
-    document.getElementById("judge0-inline-suggestions").disabled = true;
-}
-
-function updateSignInUI() {
-    if (puter.auth.isSignedIn()) {
-        uiSignIn();
-    } else {
-        uiSignOut();
-    }
-}
-
-async function signIn() {
-    await puter.auth.signIn();
-    updateSignInUI();
-}
-
-function signOut() {
-    puter.auth.signOut();
-    updateSignInUI();
-}
-
-document.addEventListener("DOMContentLoaded", function () {
-    document.getElementById("judge0-sign-in-btn").addEventListener("click", signIn);
-    document.getElementById("judge0-sign-out-btn").addEventListener("click", signOut);
-    updateSignInUI();
+```javascript
+setupFormListener("judge0-chat-form", async function (event) {
+    // Original form submission logic here
 });
+```
+
+2. **Where to Place the New Function/Class:**
+
+The `setupFormListener` function should be placed at the top of the `js/puter.js` file, before any code that uses it. This ensures that the function is defined before it is called.
+
+3. **How to Modify the Existing Code to Use It:**
+
+- Identify the existing code block that sets up the form listener (lines 64-66).
+- Replace that block with a call to `setupFormListener` as shown above.
+- Ensure that the form submission logic inside the original event listener is moved into the `submitHandler` function passed to `setupFormListener`. This will maintain the original functionality while using the new reusable function.
